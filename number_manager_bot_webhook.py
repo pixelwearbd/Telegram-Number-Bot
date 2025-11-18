@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # WARNING: If you want to use the Environment Variable, use this line:
 # BOT_TOKEN = os.environ.get("BOT_TOKEN") 
 # But since you pasted it directly, we will use the direct value:
-BOT_TOKEN = "8374666904:AAFK5fQWDC_MPXXtZTAURUGLUMWSTF84ptk" # আপনার টোকেনটি এখানে সেভ করা আছে
+BOT_TOKEN = "8374666904:AAFk5fQWDC_MpXXtzTAUruGLUMWsTF84ptk" # আপনার টোকেনটি এখানে সেভ করা আছে
 
 PORT = int(os.environ.get('PORT', 8080)) # Render অটোমেটিক পোর্ট সেট করে
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL") # এটি Render সার্ভিসের URL
@@ -240,3 +240,4 @@ if __name__ == '__main__':
         logger.warning("⚠️ WEBHOOK_URL is not set. Assuming local polling mode.")
     
     main()
+
