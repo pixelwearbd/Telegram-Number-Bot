@@ -12,13 +12,18 @@ from telegram.ext import (
     MessageHandler, 
     filters 
 )
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, Update
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, Update, constants
 
 # --- ১. কনফিগারেশন এবং লগিং ---
 
 # লগিং সেটআপ
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- অ্যাডমিন আইডি সেটআপ (পরিবর্তন করুন) ---
+# IMPORTANT: আপনার টেলিগ্রাম User ID (সংখ্যা) এখানে দিন। এটি ছাড়া /addnumber কাজ করবে না।
+# User ID পেতে @userinfobot ব্যবহার করুন।
+ADMIN_USER_ID =2035799771 # <--- আপনার আসল ইউজার ID এখানে বসান
 
 # আপনার টেলিগ্রাম টোকেনটি এখানে বসান (অথবা এনভায়রনমেন্ট ভ্যারিয়েবল থেকে লোড করুন)
 TOKEN = os.environ.get('BOT_TOKEN', '8374666904:AAFk5fQWDC_MpXXtzTAUruGLUMWsTF84ptk') # Fallback to hardcoded token if ENV not set
@@ -39,6 +44,7 @@ COUNTRIES = {
 # বাটন ডেটার কনস্ট্যান্ট
 CALLBACK_SELECT_COUNTRY_GET = "select_country_get:"
 CALLBACK_SELECT_COUNTRY_TAKEN = "select_country_taken:"
+CALLBACK_SELECT_COUNTRY_ADD = "select_country_add:" # New: For adding numbers
 CALLBACK_BACK_TO_COUNTRY = "back_to_country"
 CALLBACK_SHOW_FIRST_NUMBER = "show_first_num:"
 CALLBACK_NEXT_AVAILABLE = "next_available:"
@@ -55,6 +61,10 @@ REPLY_KEYBOARD = [
 REPLY_MARKUP = ReplyKeyboardMarkup(REPLY_KEYBOARD, resize_keyboard=True, one_time_keyboard=False)
 
 # --- ইউটিলিটি ফাংশন ---
+
+def check_admin(user_id):
+    """চেক করে ইউজার অ্যাডমিন কিনা"""
+    return user_id == ADMIN_USER_ID
 
 def escape_markdown_v2(text):
     """
@@ -78,7 +88,6 @@ def load_numbers(file_base, is_taken_list=False):
     suffix = "_taken" if is_taken_list else "_number"
     filename = f"{file_base}{suffix}.txt"
     try:
-        # ফাইল না থাকলে একটি খালি ফাইল তৈরি করা হলো
         if not os.path.exists(filename):
             with open(filename, 'w') as f:
                 pass
@@ -125,9 +134,7 @@ def get_country_selection_keyboard(callback_prefix):
 def get_number_options_keyboard(file_base, current_index, total_count, is_taken):
     """Take/Delete বাটন সহ নম্বর দেখানোর জন্য কীবোর্ড তৈরি করে।"""
     
-    # পরের নম্বরের ইন্ডেক্স
     next_index = current_index + 1
-    # লিস্ট শেষ হলে আবার প্রথম নম্বর দেখাবে
     next_index_data = next_index if next_index < total_count else 0 
     
     if is_taken:
@@ -138,7 +145,6 @@ def get_number_options_keyboard(file_base, current_index, total_count, is_taken)
         ]]
     else:
         # Available Number List এর জন্য বাটন: Next Number (Take) এবং Delete Number
-        # NOTE: Next Available বাটনে ক্লিক করলে আসলে Take Action ঘটবে, তাই এখানে বর্তমান ইন্ডেক্সটি পাঠানো হচ্ছে
         keyboard = [[
             InlineKeyboardButton("➡️ Next Number (Take)", callback_data=f"{CALLBACK_NEXT_AVAILABLE}{file_base}|{next_index}|{current_index}"), 
             InlineKeyboardButton("❌ Delete Number", callback_data=f"{CALLBACK_ACTION_DELETE}{file_base}|{current_index}|available") 
@@ -161,7 +167,6 @@ def get_list_end_message(file_base, is_taken):
         f"List ended at the last number\. "
         f"Please wait and start from 1st number\."
     )
-    # এখানে raw_text কে escape_markdown_v2 তে পাঠানো হলো
     return escape_markdown_v2(raw_text)
 
 # --- কমান্ড হ্যান্ডেলার ---
@@ -172,7 +177,7 @@ async def start(update: Update, context):
     await update.message.reply_text(
         text,
         reply_markup=REPLY_MARKUP,
-        parse_mode='MarkdownV2'
+        parse_mode=constants.ParseMode.MARKDOWN_V2
     )
 
 async def help_command(update: Update, context):
@@ -183,38 +188,34 @@ async def help_command(update: Update, context):
         "• /number \- Start the process to get a number\n"
         "• /taken \- See the numbers you have taken\n"
         "• /start \- Show the welcome message and main keyboard\.\n"
+        "• /addnumber \- \[ADMIN ONLY\] Add new numbers to a country list\.\n"
         "\n\*Support:*\n"
         f"• For any issue, contact the owner: {SUPPORT_USERNAME}"
     )
     await update.message.reply_text(
         text,
-        parse_mode='MarkdownV2'
+        parse_mode=constants.ParseMode.MARKDOWN_V2
     )
 
 async def handle_get_number_command(update: Update, context):
     """'/number' বাটন ক্লিক হলে কান্ট্রি সিলেকশন শুরু করে।"""
-    # query (CallbackQuery) বা message (Message) থেকে আপডেটটি আসছে কিনা তার উপর নির্ভর করে
-    source = update.callback_query if update.callback_query else update.message
-    
     text = escape_markdown_v2("Select a Country to get an available number:")
     reply_markup = get_country_selection_keyboard(CALLBACK_SELECT_COUNTRY_GET)
     
     if update.message:
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='MarkdownV2')
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=constants.ParseMode.MARKDOWN_V2)
     elif update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode='MarkdownV2')
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=constants.ParseMode.MARKDOWN_V2)
 
 async def handle_taken_command(update: Update, context):
     """'/taken' বাটন ক্লিক হলে কান্ট্রি সিলেকশন শুরু করে।"""
-    source = update.callback_query if update.callback_query else update.message
-    
     text = escape_markdown_v2("Select a Country to see your active \(taken\) numbers:")
     reply_markup = get_country_selection_keyboard(CALLBACK_SELECT_COUNTRY_TAKEN)
     
     if update.message:
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='MarkdownV2')
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=constants.ParseMode.MARKDOWN_V2)
     elif update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode='MarkdownV2')
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=constants.ParseMode.MARKDOWN_V2)
         
 async def handle_reply_keyboard_buttons(update: Update, context):
     """রিপ্লাই কীবোর্ডের 'Get Number' এবং 'Active Number' বাটনগুলি হ্যান্ডেল করে।"""
@@ -224,6 +225,77 @@ async def handle_reply_keyboard_buttons(update: Update, context):
         await handle_get_number_command(update, context)
     elif text == REPLY_KEYBOARD_ACTIVE:
         await handle_taken_command(update, context)
+
+
+# --- নতুন অ্যাডমিন ফাংশন: নম্বর যোগ করা ---
+
+async def add_number_command(update: Update, context):
+    """[ADMIN ONLY] নম্বর যোগ করার প্রক্রিয়া শুরু করে।"""
+    if not check_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Access Denied. Only the bot admin can use this command.")
+        return
+
+    text = escape_markdown_v2("ADMIN: Select the Country where you want to add new numbers:")
+    reply_markup = get_country_selection_keyboard(CALLBACK_SELECT_COUNTRY_ADD)
+    
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=constants.ParseMode.MARKDOWN_V2)
+
+async def select_country_for_add(query: Update.callback_query, context):
+    """অ্যাডমিনের নির্বাচিত দেশকে user_data-তে সেভ করে নম্বর পাঠানোর জন্য অনুরোধ করে।"""
+    file_base = query.data.replace(CALLBACK_SELECT_COUNTRY_ADD, "")
+    country_name = next(name for name, data in COUNTRIES.items() if data['file_base'] == file_base)
+    
+    context.user_data['awaiting_add'] = file_base
+    
+    raw_text = (
+        f"✅ Country **{country_name}** selected\. "
+        f"Now, send the list of numbers you want to add\. "
+        f"Each number must be on a new line\."
+    )
+
+    await query.edit_message_text(escape_markdown_v2(raw_text), parse_mode=constants.ParseMode.MARKDOWN_V2)
+
+async def handle_add_number_message(update: Update, context):
+    """অ্যাডমিনের পাঠানো নম্বরগুলি নির্দিষ্ট ফাইলে সেভ করে।"""
+    if not check_admin(update.effective_user.id):
+        # যদি অ্যাডমিন না হয়, তবে এই মেসেজটি উপেক্ষা করা হবে বা অন্য হ্যান্ডেলারে যাবে
+        return
+        
+    file_base = context.user_data.get('awaiting_add')
+
+    if file_base:
+        country_name = next(name for name, data in COUNTRIES.items() if data['file_base'] == file_base)
+        new_numbers_text = update.message.text.strip()
+        
+        # নতুন নম্বরগুলি লাইন ব্রেক দিয়ে আলাদা করা হলো
+        new_numbers_list = [n.strip() for n in new_numbers_text.split('\n') if n.strip()]
+        
+        if not new_numbers_list:
+            await update.message.reply_text("❌ No valid numbers detected. Please send numbers, one per line.")
+            return
+
+        # বর্তমান নম্বর লোড করা
+        available_numbers = load_numbers(file_base, is_taken_list=False)
+        available_numbers.extend(new_numbers_list)
+        
+        # ফাইলে সেভ করা
+        if save_numbers(file_base, available_numbers, is_taken_list=False):
+            raw_text = (
+                f"🎉 **SUCCESS\!** {len(new_numbers_list)} new numbers have been added to **{country_name}** list\."
+                f"\nTotal available numbers now: {len(available_numbers)}\."
+            )
+            await update.message.reply_text(escape_markdown_v2(raw_text), parse_mode=constants.ParseMode.MARKDOWN_V2)
+        else:
+            await update.message.reply_text("❌ ERROR: Failed to save numbers to file.")
+        
+        # স্টেট ক্লিয়ার করা
+        del context.user_data['awaiting_add']
+        
+        return
+
+    # যদি user_data-তে 'awaiting_add' না থাকে, তবে এটি সাধারণ মেসেজ হিসেবে বিবেচিত হবে।
+    # এই মেসেজটি অন্য কোনো হ্যান্ডেলারে যাবে (যদি থাকে) বা উপেক্ষা করা হবে।
+
 
 # --- মাল্টি-স্টেপ হ্যান্ডেলার ---
 
@@ -245,7 +317,7 @@ async def handle_country_selection(query, file_base, is_taken_selection):
         # কোনো নম্বর না থাকলে
         raw_text = f"{country_data['emoji']} **{country_name}** \- No {list_type} numbers available\."
         keyboard = [[InlineKeyboardButton("⬅️ Back to Countries", callback_data=CALLBACK_BACK_TO_COUNTRY)]]
-        await query.edit_message_text(escape_markdown_v2(raw_text), parse_mode='MarkdownV2', reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(escape_markdown_v2(raw_text), parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
     # --- মধ্যবর্তী স্ক্রিনের মেসেজ (মোট সংখ্যা দেখাবে) ---
@@ -265,7 +337,7 @@ async def handle_country_selection(query, file_base, is_taken_selection):
         [InlineKeyboardButton("⬅️ Back to Countries", callback_data=CALLBACK_BACK_TO_COUNTRY)]
     ]
 
-    await query.edit_message_text(escape_markdown_v2(raw_text), parse_mode='MarkdownV2', reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.edit_message_text(escape_markdown_v2(raw_text), parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_next_number(query, file_base, current_index, is_taken):
     """
@@ -279,21 +351,18 @@ async def handle_next_number(query, file_base, current_index, is_taken):
     if total_count == 0:
         raw_text = f"**{country_name}** \- No numbers left\."
         keyboard = [[InlineKeyboardButton("⬅️ Back to Countries", callback_data=CALLBACK_BACK_TO_COUNTRY)]]
-        await query.edit_message_text(escape_markdown_v2(raw_text), parse_mode='MarkdownV2', reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(escape_markdown_v2(raw_text), parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-    # current_index যদি মোট সংখ্যার সমান বা বেশি হয়, তবে লিস্ট শেষ।
     if current_index >= total_count:
         text = get_list_end_message(file_base, is_taken)
         keyboard = [[InlineKeyboardButton("⬅️ Back to Countries", callback_data=CALLBACK_BACK_TO_COUNTRY)]]
-        await query.edit_message_text(text, parse_mode='MarkdownV2', reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(text, parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
     # নম্বর এবং কীবোর্ড তৈরি
     current_number = numbers_list[current_index]
     
-    # --- নম্বর ডিসপ্লে ফরম্যাট (কপিযোগ্যতা নিশ্চিত করতে) ---
-    # এখানে escape_markdown_v2 ব্যবহার না করে, শুধুমাত্র নম্বরটিকে কোড ব্লকে রেখে মেসেজ পাঠানো হলো।
     raw_text = (
         f"**{country_name}** :\n"
         f"`{current_number}`"
@@ -302,7 +371,7 @@ async def handle_next_number(query, file_base, current_index, is_taken):
     reply_markup = get_number_options_keyboard(file_base, current_index, total_count, is_taken)
     
     # মেসেজ এডিট
-    await query.edit_message_text(raw_text, parse_mode='MarkdownV2', reply_markup=reply_markup)
+    await query.edit_message_text(raw_text, parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=reply_markup)
 
 
 # --- অ্যাকশন হ্যান্ডেলার: ডিলিট ও টেক ---
@@ -330,7 +399,7 @@ async def handle_action(query, data, is_delete):
             await query.answer("❌ Error: Failed to save source file.", show_alert=True)
             return
             
-        if not is_taken_list and not is_delete: # Take Action
+        if not is_taken_list and not is_delete: # Take Action (Next Available)
             taken_numbers = load_numbers(file_base, True)
             taken_numbers.append(number_to_act)
             if not save_numbers(file_base, taken_numbers, True):
@@ -340,7 +409,7 @@ async def handle_action(query, data, is_delete):
             logger.info(f"TAKE ACTION: {number_to_act} moved from {file_base}_number.txt to {file_base}_taken.txt")
             
             # সফল মেসেজ
-            raw_text = f"✅ Success! **{country_name}** number `{number_to_act}` has been successfully taken\."
+            raw_text = f"✅ Success\! **{country_name}** number `{number_to_act}` has been successfully taken\."
             await query.answer(escape_markdown_v2(raw_text), show_alert=True)
 
         
@@ -348,7 +417,7 @@ async def handle_action(query, data, is_delete):
              logger.info(f"DELETE ACTION: {number_to_act} deleted from {list_type} list.")
              
              # সফল মেসেজ
-             raw_text = f"✅ Success! **{country_name}** number `{number_to_act}` has been successfully deleted\."
+             raw_text = f"✅ Success\! **{country_name}** number `{number_to_act}` has been successfully deleted\."
              await query.answer(escape_markdown_v2(raw_text), show_alert=True)
             
         # অ্যাকশন সফল, এবার পরবর্তী নম্বরটি দেখান
@@ -358,14 +427,14 @@ async def handle_action(query, data, is_delete):
             # কোনো নম্বর না থাকলে
             raw_text = f"✅ `{number_to_act}` {'deleted' if is_delete else 'taken'}\. No more numbers left in this list\."
             keyboard = [[InlineKeyboardButton("⬅️ Back to Countries", callback_data=CALLBACK_BACK_TO_COUNTRY)]]
-            await query.edit_message_text(escape_markdown_v2(raw_text), parse_mode='MarkdownV2', reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text(escape_markdown_v2(raw_text), parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup(keyboard))
             return
 
         if next_index >= len(source_numbers):
             # লিস্টের শেষ নম্বর ডিলিট বা টেক হলে
             text = get_list_end_message(file_base, is_taken_list)
             keyboard = [[InlineKeyboardButton("⬅️ Back to Countries", callback_data=CALLBACK_BACK_TO_COUNTRY)]]
-            await query.edit_message_text(text, parse_mode='MarkdownV2', reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text(text, parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup(keyboard))
             return
         
         # পরের নম্বরটি দেখান
@@ -388,7 +457,6 @@ async def button_callback(update: Update, context):
     
     try:
         if data == CALLBACK_BACK_TO_COUNTRY:
-            # ব্যাক টু কান্ট্রিস মানে GET মোডে ফিরে যাওয়া
             await handle_get_number_command(query, context)
 
         # ১. কান্ট্রি সিলেকশন (মধ্যবর্তী স্ক্রিন দেখাবে)
@@ -397,71 +465,4 @@ async def button_callback(update: Update, context):
             await handle_country_selection(query, file_base, is_taken_selection=False)
             
         elif data.startswith(CALLBACK_SELECT_COUNTRY_TAKEN):
-            file_base = data.replace(CALLBACK_SELECT_COUNTRY_TAKEN, "")
-            await handle_country_selection(query, file_base, is_taken_selection=True)
-
-        # ২. মধ্যবর্তী স্ক্রিন থেকে প্রথম নম্বর দেখানো শুরু (Get Number/See Active Numbers ক্লিক)
-        elif data.startswith(CALLBACK_SHOW_FIRST_NUMBER):
-            # Format: file_base|is_taken_str
-            file_base, is_taken_str = data.replace(CALLBACK_SHOW_FIRST_NUMBER, "").split('|')
-            # 'False' বা 'True' স্ট্রিং কে বুলিয়ানে কনভার্ট করা
-            is_taken = (is_taken_str == 'True') 
-            # প্রথম নম্বরটি দেখাও
-            await handle_next_number(query, file_base, 0, is_taken)
-
-        # ৩. পরবর্তী নম্বর দেখা (Available List) - টেক অ্যাকশন সহ (Next Number বাটনে ক্লিক)
-        elif data.startswith(CALLBACK_NEXT_AVAILABLE):
-            # Format: file_base|next_index|current_index_to_take
-            parts = data.replace(CALLBACK_NEXT_AVAILABLE, "").split('|')
-            file_base = parts[0]
-            current_index_to_take = int(parts[2])
-            
-            # টেক অ্যাকশন (handle_action এই ফাংশন শেষে পরের নম্বরটি দেখাবে)
-            await handle_action(query, f"{file_base}|{current_index_to_take}|available", is_delete=False)
-
-        # ৪. পরবর্তী নম্বর দেখা (Taken List)
-        elif data.startswith(CALLBACK_NEXT_TAKEN):
-            # Format: file_base|next_index 
-            parts = data.replace(CALLBACK_NEXT_TAKEN, "").split('|')
-            file_base = parts[0]
-            next_index = int(parts[1])
-            
-            # পরবর্তী নম্বর দেখাও (এখানে কোনো অ্যাকশন নেই, শুধু নেক্সট নম্বর)
-            await handle_next_number(query, file_base, next_index, is_taken=True)
-
-        # ৫. অ্যাকশন: ডিলিট
-        elif data.startswith(CALLBACK_ACTION_DELETE):
-            # Format: file_base|index_to_delete|list_type (available or taken)
-            data_to_act = data.replace(CALLBACK_ACTION_DELETE, "")
-            # ডিলিট অ্যাকশন
-            await handle_action(query, data_to_act, is_delete=True)
-
-    except Exception as e:
-        logger.error(f"Critical error in button_callback: {e}")
-        logger.error(traceback.format_exc())
-        # মেসেজ এডিটের সময় যদি parse error হয়, তবে একটি নিরাপদ মেসেজ দেখাও।
-        await query.edit_message_text(escape_markdown_v2(f"❌ A critical error occurred: Can't parse entities\. Please contact support {SUPPORT_USERNAME}"), parse_mode='MarkdownV2')
-
-
-# --- মূল রান ফাংশন ---
-
-def main():
-    """প্রধান ফাংশন যা বট চালু করে"""
-    
-    # টোকেন চেক
-    if not TOKEN:
-        logger.error("❌ BOT_TOKEN is not set. The bot cannot start.")
-        return
-
-    # Application.builder().token(TOKEN).build()
-    application = Application.builder().token(TOKEN).build()
-    
-    logger.info("বোট চালু করার জন্য প্রস্তুত হচ্ছে...")
-
-    # কমান্ড হ্যান্ডলার 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("number", handle_get_number_command))
-    application.add_handler(CommandHandler("taken", handle_taken_command))
-    application.add_handler(CommandHandler("help", help_command))
-    
-    # রিপ্লাই কীবোর্ড বাটন হ্যান্ডেলার
+            file_base = data.replace(CALLBACK_SELECT_COUN
