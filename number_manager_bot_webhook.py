@@ -429,7 +429,7 @@ async def button_callback(update, context):
 # --- মূল রান ফাংশন ---
 
 def main():
-    application = ApplicationBuilder().token(TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).build()
     
     print("বোট চালু করার জন্য প্রস্তুত হচ্ছে...")
 
@@ -452,3 +452,4 @@ def main():
 if __name__ == '__main__':
 
     main()
+
