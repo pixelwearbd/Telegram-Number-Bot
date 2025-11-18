@@ -20,7 +20,7 @@ import os
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # আপনার টেলিগ্রাম টোকেনটি এখানে বসান
-TOKEN = '8374666904:AAFk5fQWDC_MpXXtzTAUruGLUMWsTF84ptk' 
+BOT_TOKEN = '8374666904:AAFk5fQWDC_MpXXtzTAUruGLUMWsTF84ptk' 
 SUPPORT_USERNAME = '@kzishihab'
 
 # কান্ট্রি কনফিগারেশন এবং ফাইল নাম
@@ -450,4 +450,5 @@ def main():
 
 
 if __name__ == '__main__':
+
     main()
